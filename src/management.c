@@ -4,6 +4,17 @@
 #include <sys/stat.h>
 #include "management.h"
 
+static void getFileName(const char* path, char* host_file) {
+    const char *retVal = path;
+    char *p;
+    for (p = (char*)path; *p; p++) {
+        if (*p == '/' || *p == '\\' || *p == ':') {
+            retVal = p+1;
+        }
+    }
+    strcpy(host_file, retVal);
+}
+
 void load_header(FILE *disk, DiskHeader *header) {
     fseek(disk, 0, SEEK_SET);
     fread(header, sizeof(DiskHeader), 1, disk);
@@ -99,14 +110,14 @@ void delete_disk(const char *name) {
         perror("Error deleting disk");
 }
 
-void copy_in(const char *disk_name, const char *host_file) {
+void copy_in(const char *disk_name, const char *host_path) {
     FILE *disk = fopen(disk_name, "rb+");
     if (!disk) {
         perror("Could not open virtual disk");
         exit(1);
     }
 
-    FILE *src = fopen(host_file, "rb");
+    FILE *src = fopen(host_path, "rb");
     if (!src) {
         perror("Could not open host file");
         fclose(disk);
@@ -114,12 +125,16 @@ void copy_in(const char *disk_name, const char *host_file) {
     }
 
     struct stat st;
-    stat(host_file, &st);
+    stat(host_path, &st);
     int file_size = st.st_size;
     int blocks_needed = (file_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     DiskHeader header;
     load_header(disk, &header);
+
+    char host_file[FILENAME_MAX];
+
+    getFileName(host_path, host_file);
 
     if(strlen(host_file) > header.max_filename) {
         fprintf(stderr, "Filename too long!\n");
@@ -136,7 +151,7 @@ void copy_in(const char *disk_name, const char *host_file) {
 
     int start_block = -1;
     int found = 0;
-    for (int i = 0; i <= MAX_BLOCKS - blocks_needed; i++) {
+    for (int i = 0; i <= (header.size - header.header_size) / BLOCK_SIZE - blocks_needed; i++) {
         int ok = 1;
         for (int j = 0; j < blocks_needed; j++) {
             if (header.block_map[i + j]) {
